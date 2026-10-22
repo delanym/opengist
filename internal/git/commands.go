@@ -337,6 +337,8 @@ func GetLog(user string, gist string, revision string, skip int, limit int) ([]*
 
 	cmd := exec.Command(
 		"git",
+		"-c",
+		"diff.context=3",
 		"--no-pager",
 		"log",
 		"-n",

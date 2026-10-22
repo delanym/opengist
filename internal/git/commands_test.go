@@ -428,3 +428,39 @@ func TestGitInitBranchNames(t *testing.T) {
 	require.NoError(t, err, "Could not run git command")
 	require.Equal(t, "refs/heads/main", strings.TrimSpace(string(out)), "Repository should have main branch as default")
 }
+
+func TestGetLogUsesDefaultDiffContext(t *testing.T) {
+	SetupTest(t)
+	defer TeardownTest(t)
+
+	gitConfig := filepath.Join(t.TempDir(), "gitconfig")
+	require.NoError(t, os.WriteFile(gitConfig, []byte("[diff]\n\tcontext = 0\n"), 0644))
+	t.Setenv("GIT_CONFIG_GLOBAL", gitConfig)
+
+	CommitToBare(t, "thomas", "gist1", map[string]string{
+		"file.txt": "I really\nhate Opengist",
+	})
+	CommitToBare(t, "thomas", "gist1", map[string]string{
+		"file.txt": "I really\nlike Opengist actually",
+	})
+
+	commits, err := GetLog("thomas", "gist1", "HEAD", 0, 10)
+	require.NoError(t, err, "Could not get log")
+	require.NotEmpty(t, commits)
+	require.NotEmpty(t, commits[0].Files)
+
+	require.Contains(t, commits[0].Files, File{
+		Filename:    "file.txt",
+		OldFilename: "file.txt",
+		Content: `@@ -1,2 +1,2 @@
+ I really
+-hate Opengist
+\ No newline at end of file
++like Opengist actually
+\ No newline at end of file
+`,
+		Truncated: false,
+		IsCreated: false,
+		IsDeleted: false,
+	}, "File file.txt is not correct")
+}
