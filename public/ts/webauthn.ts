@@ -154,8 +154,11 @@ async function loginWithPasskey() {
             throw new Error(finishData.message || 'Unknown error');
         }
 
+        const nextInput = document.querySelector<HTMLInputElement>('form#webauthn input[name="next"]');
+        const next = nextInput && nextInput.value ? nextInput.value : '/';
+
         setTimeout(() => {
-            window.location.href = `${baseUrl}`;
+            window.location.href = `${baseUrl}${next}`;
         }, 100);
     } catch (error) {
         console.error('Login error:', error);

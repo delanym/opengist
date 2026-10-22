@@ -164,6 +164,20 @@ func TestLoginPage(t *testing.T) {
 			"disableForm": true,
 		})
 	})
+
+	t.Run("Next", func(t *testing.T) {
+		s.Request(t, "GET", "/-/login?next=%2Fthomas%2Fabc%3Ffile%3Dmain.go", nil, 200)
+		s.TestCtxData(t, echo.Map{
+			"next": "/thomas/abc?file=main.go",
+		})
+	})
+
+	t.Run("InvalidNext", func(t *testing.T) {
+		s.Request(t, "GET", "/-/login?next=https%3A%2F%2Fevil.example", nil, 200)
+		s.TestCtxData(t, echo.Map{
+			"next": "/",
+		})
+	})
 }
 
 func TestProcessLogin(t *testing.T) {
@@ -179,6 +193,46 @@ func TestProcessLogin(t *testing.T) {
 		require.Equal(t, "thomas", s.User().Username)
 
 		s.Logout()
+	})
+
+	t.Run("ValidCredentialsWithNext", func(t *testing.T) {
+		resp := s.Request(t, "POST", "/-/login", url.Values{
+			"username": {"thomas"},
+			"password": {"thomas"},
+			"next":     {"/thomas/abc?file=main.go"},
+		}, 302)
+		require.Equal(t, "/thomas/abc?file=main.go", resp.Header.Get("Location"))
+		require.NotEmpty(t, s.SessionCookie)
+		require.Equal(t, "thomas", s.User().Username)
+
+		s.Logout()
+	})
+
+	t.Run("ValidCredentialsWithInvalidNext", func(t *testing.T) {
+		resp := s.Request(t, "POST", "/-/login", url.Values{
+			"username": {"thomas"},
+			"password": {"thomas"},
+			"next":     {"https://evil.example/thomas/abc"},
+		}, 302)
+		require.Equal(t, "/", resp.Header.Get("Location"))
+		require.NotEmpty(t, s.SessionCookie)
+
+		s.Logout()
+	})
+
+	t.Run("InvalidPasswordWithNext", func(t *testing.T) {
+		resp := s.Request(t, "POST", "/-/login", url.Values{
+			"username": {"thomas"},
+			"password": {"wrongpassword"},
+			"next":     {"/thomas/abc"},
+		}, 302)
+		require.Equal(t, "/-/login?next=%2Fthomas%2Fabc", resp.Header.Get("Location"))
+		require.Nil(t, s.User())
+	})
+
+	t.Run("ProtectedRouteKeepsNext", func(t *testing.T) {
+		resp := s.Request(t, "GET", "/-/settings", nil, 302)
+		require.Equal(t, "/-/login?next=%2F-%2Fsettings", resp.Header.Get("Location"))
 	})
 
 	t.Run("InvalidPassword", func(t *testing.T) {

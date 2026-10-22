@@ -17,6 +17,7 @@ func Mfa(ctx *context.Context) error {
 
 	ctx.SetData("hasWebauthn", hasWebauthn)
 	ctx.SetData("hasTotp", hasTotp)
+	ctx.SetData("next", nextFromSession(ctx))
 
 	return ctx.Html("mfa.html")
 }

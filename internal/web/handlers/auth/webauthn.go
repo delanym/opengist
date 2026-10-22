@@ -98,6 +98,7 @@ func FinishWebAuthnLogin(ctx *context.Context) error {
 
 	delete(sess.Values, "webauthn_login_session")
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 
 	return ctx.Json([]string{"OK"})
 }
@@ -146,6 +147,7 @@ func FinishWebAuthnAssertion(ctx *context.Context) error {
 	delete(sess.Values, "webauthn_assertion_session")
 	delete(sess.Values, "mfaID")
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 
 	return ctx.Json([]string{"OK"})
 }

@@ -17,6 +17,9 @@ func Register(ctx *context.Context) error {
 	disableSignup := ctx.GetData("DisableSignup")
 	disableForm := ctx.GetData("DisableLoginForm")
 
+	next := nextFromRequest(ctx)
+	saveNext(ctx, next)
+
 	code := ctx.QueryParam("code")
 	if code != "" {
 		if invitation, err := db.GetInvitationByCode(code); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -34,11 +37,16 @@ func Register(ctx *context.Context) error {
 	ctx.SetData("disableForm", disableForm)
 	ctx.SetData("disableSignup", disableSignup)
 	ctx.SetData("isLoginPage", false)
+	ctx.SetData("next", next)
 	return ctx.Html("auth_form.html")
 }
 
 func ProcessRegister(ctx *context.Context) error {
 	disableSignup := ctx.GetData("DisableSignup")
+
+	next := nextFromRequest(ctx)
+	saveNext(ctx, next)
+	ctx.SetData("next", next)
 
 	code := ctx.QueryParam("code")
 	invitation, err := db.GetInvitationByCode(code)
@@ -102,15 +110,20 @@ func ProcessRegister(ctx *context.Context) error {
 
 	sess.Values["user"] = user.ID
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 
-	return ctx.RedirectTo("/")
+	return ctx.RedirectTo(next)
 }
 
 func Login(ctx *context.Context) error {
+	next := nextFromRequest(ctx)
+	saveNext(ctx, next)
+
 	ctx.SetData("title", ctx.TrH("auth.login"))
 	ctx.SetData("htmlTitle", ctx.TrH("auth.login"))
 	ctx.SetData("disableForm", ctx.GetData("DisableLoginForm"))
 	ctx.SetData("isLoginPage", true)
+	ctx.SetData("next", next)
 	return ctx.Html("auth_form.html")
 }
 
@@ -118,6 +131,9 @@ func ProcessLogin(ctx *context.Context) error {
 	if ctx.GetData("DisableLoginForm") == true {
 		return ctx.ErrorRes(403, ctx.Tr("error.login-disabled-form"), nil)
 	}
+
+	next := nextFromRequest(ctx)
+	saveNext(ctx, next)
 
 	var user *db.User
 	var err error
@@ -134,7 +150,7 @@ func ProcessLogin(ctx *context.Context) error {
 		if errors.As(err, &authErr) {
 			log.Warn().Msg("Invalid HTTP authentication attempt from " + ctx.RealIP())
 			ctx.AddFlash(ctx.Tr("flash.auth.invalid-credentials"), "error")
-			return ctx.RedirectTo("/-/login")
+			return ctx.RedirectTo(loginRedirect(next))
 		}
 		return ctx.ErrorRes(500, "Authentication system error", nil)
 	}
@@ -154,9 +170,10 @@ func ProcessLogin(ctx *context.Context) error {
 	sess.Values["user"] = user.ID
 	sess.Options.MaxAge = 60 * 60 * 24 * 365 // 1 year
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 	ctx.DeleteCsrfCookie()
 
-	return ctx.RedirectTo("/")
+	return ctx.RedirectTo(next)
 }
 
 func Logout(ctx *context.Context) error {

@@ -119,7 +119,7 @@ func AssertTotp(ctx *context.Context) error {
 		return ctx.ErrorRes(500, "Cannot get TOTP by UID", err)
 	}
 
-	redirectUrl := "/"
+	redirectUrl := nextFromSession(ctx)
 
 	var validCode, validRecoveryCode bool
 	if validCode, err = userTotp.ValidateCode(dto.Code); err != nil {
@@ -137,13 +137,16 @@ func AssertTotp(ctx *context.Context) error {
 		}
 
 		ctx.AddFlash(ctx.Tr("auth.totp.code-used", dto.Code), "warning")
-		redirectUrl = "/-/settings/authentication"
+		if redirectUrl == "/" {
+			redirectUrl = "/-/settings/authentication"
+		}
 	}
 
 	sess.Values["user"] = userId
 	sess.Options.MaxAge = 60 * 60 * 24 * 365 // 1 year
 	delete(sess.Values, "mfaID")
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 
 	return ctx.RedirectTo(redirectUrl)
 }

@@ -33,13 +33,16 @@ func allowOauthSignup(ctx *context.Context) (*db.Invitation, bool, error) {
 
 	if ctx.GetData("DisableSignup") == true {
 		ctx.AddFlash(ctx.Tr("error.signup-disabled"), "error")
-		return nil, false, ctx.Redirect(302, "/-/login")
+		return nil, false, ctx.Redirect(302, loginRedirect(nextFromSession(ctx)))
 	}
 	return nil, true, nil
 }
 
 func Oauth(ctx *context.Context) error {
 	providerStr := ctx.Param("provider")
+
+	next := nextFromRequest(ctx)
+	saveNext(ctx, next)
 
 	httpProtocol := "http"
 	if ctx.Request().TLS != nil || ctx.Request().Header.Get("X-Forwarded-Proto") == "https" {
@@ -70,7 +73,7 @@ func Oauth(ctx *context.Context) error {
 	provider, err := oauth.DefineProvider(providerStr, opengistUrl)
 	if err != nil {
 		ctx.AddFlash(ctx.Tr("error.oauth-unsupported"), "error")
-		return ctx.Redirect(302, "/-/login")
+		return ctx.Redirect(302, loginRedirect(next))
 	}
 
 	if err = provider.RegisterProvider(); err != nil {
@@ -85,11 +88,12 @@ func OauthCallback(ctx *context.Context) error {
 	provider, err := oauth.CompleteUserAuth(ctx)
 	if err != nil {
 		ctx.AddFlash(fmt.Sprintf("%s: %s", ctx.Tr("auth.oauth.no-provider"), err.Error()), "error")
-		return ctx.Redirect(302, "/-/login")
+		return ctx.Redirect(302, loginRedirect(nextFromSession(ctx)))
 	}
 
 	currUser := ctx.User
 	user := provider.GetProviderUser()
+	next := nextFromSession(ctx)
 
 	// if user is logged in, link account to user and update its avatar URL
 	if currUser != nil {
@@ -97,11 +101,13 @@ func OauthCallback(ctx *context.Context) error {
 		if existingUser, err := db.GetUserByProvider(user.UserID, provider.GetProvider()); err == nil && existingUser != nil {
 			if existingUser.ID != currUser.ID {
 				ctx.AddFlash(ctx.Tr("flash.auth.oauth-already-linked", config.C.OIDCProviderName), "error")
+				deleteNext(ctx)
 				return ctx.RedirectTo("/-/settings")
 			}
 
 			// the account is already linked to the user currently logged in:
 			// this is a re-authentication, not a link attempt
+			deleteNext(ctx)
 			return ctx.RedirectTo("/")
 		}
 
@@ -112,6 +118,7 @@ func OauthCallback(ctx *context.Context) error {
 		}
 
 		ctx.AddFlash(ctx.Tr("flash.auth.account-linked-oauth", config.C.OIDCProviderName), "success")
+		deleteNext(ctx)
 		return ctx.RedirectTo("/-/settings")
 	}
 
@@ -155,9 +162,10 @@ func OauthCallback(ctx *context.Context) error {
 	sess := ctx.GetSession()
 	sess.Values["user"] = userDB.ID
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 	ctx.DeleteCsrfCookie()
 
-	return ctx.RedirectTo("/")
+	return ctx.RedirectTo(next)
 }
 
 func OauthRegister(ctx *context.Context) error {
@@ -173,6 +181,7 @@ func OauthRegister(ctx *context.Context) error {
 	ctx.SetData("oauthNickname", sess.Values["oauthNickname"])
 	ctx.SetData("oauthEmail", sess.Values["oauthEmail"])
 	ctx.SetData("oauthAvatarURL", sess.Values["oauthAvatarURL"])
+	ctx.SetData("next", nextFromSession(ctx))
 
 	return ctx.Html("oauth_register.html")
 }
@@ -200,6 +209,7 @@ func ProcessOauthRegister(ctx *context.Context) error {
 			ctx.SetData("oauthEmail", sess.Values["oauthEmail"])
 		}
 		ctx.SetData("oauthAvatarURL", sess.Values["oauthAvatarURL"])
+		ctx.SetData("next", nextFromSession(ctx))
 	}
 
 	// Bind and validate form data
@@ -301,12 +311,15 @@ func ProcessOauthRegister(ctx *context.Context) error {
 	delete(sess.Values, "oauthIsAdmin")
 	delete(sess.Values, oauthInvitationSessionKey)
 
+	next := nextFromSession(ctx)
+
 	sess.Values["user"] = userDB.ID
 	sess.Options.MaxAge = 60 * 60 * 24 * 365 // 1 year
 	ctx.SaveSession(sess)
+	deleteNext(ctx)
 	ctx.DeleteCsrfCookie()
 
-	return ctx.RedirectTo("/")
+	return ctx.RedirectTo(next)
 }
 
 func OauthUnlink(ctx *context.Context) error {

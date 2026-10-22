@@ -169,6 +169,11 @@ func dataInit(next Handler) Handler {
 		ctx.SetData("baseHttpUrl", baseHttpUrl)
 		ctx.SetData("canonicalUrl", baseHttpUrl+ctx.Request().URL.Path)
 
+		requestURI := ctx.Request().URL.RequestURI()
+		if target := handlers.SafeNext(requestURI); target != "/" && !isAuthPath(ctx.Request().URL.Path) {
+			ctx.SetData("loginNext", target)
+		}
+
 		return next(ctx)
 	}
 }
@@ -212,8 +217,24 @@ func logged(next Handler) Handler {
 		if user != nil {
 			return next(ctx)
 		}
-		return ctx.RedirectTo("/-/all")
+		return ctx.RedirectTo(handlers.LoginRedirect(loginNext(ctx)))
 	}
+}
+
+func loginNext(ctx *context.Context) string {
+	switch ctx.Request().Method {
+	case http.MethodGet, http.MethodHead:
+		return ctx.Request().URL.RequestURI()
+	default:
+		return ""
+	}
+}
+
+func isAuthPath(path string) bool {
+	return strings.HasPrefix(path, "/-/login") ||
+		strings.HasPrefix(path, "/-/register") ||
+		strings.HasPrefix(path, "/oauth/") ||
+		strings.HasPrefix(path, "/mfa")
 }
 
 func inMFASession(next Handler) Handler {
@@ -255,7 +276,7 @@ func makeCheckRequireLogin(isSingleGistAccess bool) Middleware {
 
 			if !allow {
 				ctx.AddFlash(ctx.Tr("flash.auth.must-be-logged-in"), "error")
-				return ctx.RedirectTo("/-/login")
+				return ctx.RedirectTo(handlers.LoginRedirect(loginNext(ctx)))
 			}
 			return next(ctx)
 		}

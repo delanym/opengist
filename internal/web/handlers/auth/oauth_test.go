@@ -298,4 +298,45 @@ func TestOIDCLoginPKCE(t *testing.T) {
 		require.Equal(t, "/", resp.Request.URL.Path,
 			"re-authenticating as the already-linked user must not be treated as a conflicting link attempt")
 	})
+
+	t.Run("next is preserved through OAuth registration", func(t *testing.T) {
+		m.QueueUser(&oidcUser{MockUser: &mockoidc.MockUser{
+			Subject:           "carol-id",
+			Email:             "carol@example.com",
+			PreferredUsername: "carol",
+			EmailVerified:     true,
+		}})
+
+		jar, err := cookiejar.New(nil)
+		require.NoError(t, err)
+
+		client := &http.Client{
+			Jar: jar,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 15 {
+					return http.ErrUseLastResponse
+				}
+				return nil
+			},
+		}
+
+		resp, err := client.Get(base + "/oauth/openid-connect?next=" + url.QueryEscape("/-/all?foo=bar"))
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		require.Equal(t, "/oauth/register", resp.Request.URL.Path)
+
+		csrf := regexp.MustCompile(`name="_csrf" value="([^"]+)"`).FindStringSubmatch(string(body))
+		require.Len(t, csrf, 2, "could not find the CSRF token in the registration form")
+
+		resp, err = client.PostForm(base+"/oauth/register", url.Values{
+			"username": {"carol"},
+			"email":    {"carol@example.com"},
+			"_csrf":    {csrf[1]},
+		})
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		require.Equal(t, "/-/all?foo=bar", resp.Request.URL.RequestURI())
+	})
 }
